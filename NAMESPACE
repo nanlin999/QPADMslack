@@ -1,0 +1,5 @@
+exportPattern("^[[:alpha:]]+")
+export(QPADMslack)
+export(paraQPADMslack)
+importFrom(Rcpp,sourceCpp)
+useDynLib(QPADMslack)

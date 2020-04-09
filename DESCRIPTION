@@ -1,0 +1,15 @@
+Package: QPADMslack
+Type: Package
+Title: The QPADM-slack Algorithm for Nonconvex Penalized Quantile Regression in Distributed Big Data Based on ADMM 
+Version: 0.1.0
+Author: Ye Fan, Nan Lin and Xianjun Yin
+Maintainer: Ye Fan <fanye0319@outlook.com>
+Description: Fit the nonconvex penalized quantile regression with ADMM in a parallel way.
+    The package currently supports two penalties (SCAD and MCP) 
+    The specific implementation is only pseudo-parallel.
+License: GPL
+Encoding: UTF-8
+LazyData: true
+LinkingTo: Rcpp,RcppArmadillo
+Imports: Rcpp,RcppArmadillo
+RoxygenNote: 7.0.2
