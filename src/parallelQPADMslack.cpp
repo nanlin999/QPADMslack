@@ -181,14 +181,32 @@ Rcpp::List QPADMslackcpp(arma::vec y, arma::mat x, double tau, String penalty, d
 }
 
 //[[Rcpp::export]]
+// the main function we want to implement in parallel
+// a brief introduction to the input variables
+// K: the number of local machines;
+// y: a vector with dimension n, and it is stored on K local machines distributively in reality (the kth local machine only stores a nk-dimensional subvector) 
+// X: a matrix with dimension n*p. It is also stored on K local machines distributively (the kth local machine stores a submatrix with dimension nk*p)  
+// the variables "tau", "penalty", "a" and "lambda" are fixed values which will be given by users
+// the variables "pho", "maxstep", "eps" and "intercept" are also fixed values. Here we give them default values according to practical experience. 
+// "maxstep" and "eps" are the stopping criteria. When the number of iterations of the algorithm is greater than "maxstep" or the distance of loss function values at two successive iterations is less than "eps", we stop the algorithm    
 Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String penalty, double a, double lambda, double pho = 15, int maxstep = 1000, double eps = 0.001, bool intercept = false){
-  
+
+  //calculate the dimension "n" of y (equals to the number of rows in x), the dimension "nk" of the subvector of y stored on local machines (equals to the number of rows in the submatrix of x stored on local machines), and the number of columns "p" in x
+  //if the input variable "intercept" = TRUE, we add a column 1 to x  
+  //these codes are not needed to be parallelized 
   int n = x.n_rows, nk = n/K;
   if(intercept){
     x.insert_cols(0, arma::ones(n));
   }
   int p = x.n_cols;
-  
+
+  //the initialization of the variables needed to be updated in the algorithm 
+  //both "u" and "z" are matrice, with each column of them store a local value for u_k and beta_k, repsectively
+  //"uini" and "zini" are the values for u and z in the previous iteration
+  //the meanings of vectors "beta", "xi", "eta", "v" are the same as those in our paper 
+  //"etaini" and "vini" are the values for "eta" and "v" in the previous iteration
+  //"zmean" and "umean" respectively are the mean of the local values beta_k and u_k, i.e., the mean of matrice z and u by row 
+  //"xmcp", "hmcp", "xscad" and "hscad" are temporary variables just for updating beta
   arma::mat zini(p, K, fill::zeros), uini(p, K, fill::zeros), z(p, K, fill::zeros), u(p, K, fill::zeros);
   arma::vec etaini(n, fill::zeros), vini(n, fill::zeros);
   arma::vec beta(p, fill::zeros), xi(n, fill::zeros), eta(n, fill::zeros), v(n, fill::zeros);
@@ -196,16 +214,22 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
   arma::vec xmcp(3, fill::zeros), hmcp(3, fill::zeros), xscad(4, fill::zeros), hscad(4, fill::zeros);
   arma::vec yx = y;
   lambda = lambda/n, pho = pho/n;
-  
+
+  //variables for recording the computational time of this pseudo parallel algorithm
   double max_prep = 0, time_reduce = 0, max_map = 0, time = 0;
   arma::vec map(K, fill::zeros);
   
   double distance = 1, lossini = 0, loss = 0, phi = 0;
-
-  lossini = checklosssum(y-x*beta, tau)+penaltysum(beta, a, lambda, penalty);
   
+  //the initial value of the loss function
+  lossini = checklosssum(y-x*beta, tau)+penaltysum(beta, a, lambda, penalty);
+
+  //before performing this algorithm, we need to conduct a matrix inversion in each local machine in parallel
+  //now this part is implemented in a loop function sequentially, it should be parallelized
   arma::cube tmp = arma::zeros<arma::cube>(p,p,K);
   for(int k = 0; k < K; k++){
+    //xk is the submatrix stored on the kth local machine
+    //the code in this "for" loop should be parallelized
     arma::mat tmp2, xk = x.rows(k*nk,k*nk+nk-1);
     auto start_prep = std::chrono::high_resolution_clock::now();
     if(nk > p) 
@@ -216,12 +240,17 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
     if(elapsed_prep.count()>max_prep) max_prep = elapsed_prep.count();
     tmp.slice(k) = tmp2;
   }
+  //"max_prep" records the computational time for this part 
   time = time + max_prep;
   
+  //"iteration" records the number of iterations of the algorithm
   int iteration = 0;
-  
+
+  //the codes in the "while" function is the specific implemtation of the algorithm
   while(((distance > eps)|(distance == 0))&&(iteration < maxstep)){
 
+    //this part is for updating the variable beta, it is implemented on the central machine in reality after the central machine receives the K local values for beta_k and u_k from local machines
+    //it does not need to be parallelized 
     auto start_reduce = std::chrono::high_resolution_clock::now();
     zmean = mean(zini, 1);
     umean = mean(uini, 1);
@@ -283,8 +312,10 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
     time_reduce = elapsed_reduce.count();
     time = time + time_reduce;
     
+     //in this "for" loop, we update the variables "xi", "eta", beta_k, u_k and "v", they should be implemented on K local machines in parallel in reality.
     for(int k = 0; k < K; k++){
-      
+
+      //the code in this loop should be parallelized
       arma::mat xk = x.rows(k*nk,k*nk+nk-1);
       arma::vec yk = y.subvec(nk*k, nk*k+nk-1), vinik = vini.subvec(nk*k, nk*k+nk-1), etainik = etaini.subvec(k*nk,k*nk+nk-1);
       auto start_map = std::chrono::high_resolution_clock::now();
@@ -310,14 +341,17 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
     }
     max_map = map(map.index_max());
     time = time + max_map;
+    //max_map records the computational time for this parallel process
     
+    //update the loss function value and calculate the distance of loss function values at two successive iteration
     loss = checklosssum(y-x*beta,tau)+penaltysum(beta, a, lambda, penalty);
     distance = sum(abs(loss-lossini));
     
     lossini = loss, zini = z, uini = u, etaini = eta, vini=v;
     iteration = iteration+1;
   }  
- 
+
+  //return the final results
   Rcpp::List final;
   final = List::create(Named("Estimation") = beta, Named("Iteration") = iteration, Named("Time") = time);
   return final; 
