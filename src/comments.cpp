@@ -6,7 +6,7 @@ using namespace Rcpp;
 using namespace arma;
 using namespace std;
 
-//function for calculating the SCAD or MCP penalty at a fixed beta value (for specific form of SCAD and MCP, please see page 5 and 8 of the slides)  
+//function for calculating the SCAD or MCP penalty at a fixed beta value
 //input: 
 //  beta: a fixed beta value (double)
 //  a: shape parameter of the penalty (double) (common choice: a = 3.7 for SCAD and a = 3 for MCP)
@@ -111,7 +111,7 @@ double checklosssum(arma::vec u, double tau){
 //        2. Iteration: number of iterations of the algorithm (integer)
 //        3. Time: the computational time of the algorithm (double)
 //[[Rcpp::export]]
-Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String penalty, double a, double lambda, double pho = 15, int maxstep = 1000, double eps = 0.001, bool intercept = false){
+Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String penalty, double a, double lambda, double pho = 5, int maxstep = 500, double eps = 0.001, bool intercept = false){
 
   //calculate the number of rows and columns of the matrix x by using the Rcpp functions .n_rows and .n_cols, and put the obtained values into the newly defined integer variables n and p, respectively
   //note: if the model contains an intercept, we should first insert a column ones into the matrix x (in the left) and then calculate the number of columns of x
@@ -262,9 +262,9 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
       //update z
       z.col(k) = tmp.slice(k)*(beta-uini.col(k)/pho+xk.t()*(yk-xi.subvec(k*nk,k*nk+nk-1)+eta.subvec(k*nk,k*nk+nk-1)+vinik/pho));
       //update u
-      yx.subvec(k*nk,k*nk+nk-1) = yk-xk*z.col(k);
       u.col(k) = uini.col(k)+pho*(z.col(k)-beta);
       //update v
+      yx.subvec(k*nk,k*nk+nk-1) = yk-xk*z.col(k);
       v.subvec(k*nk,k*nk+nk-1) = vinik+pho*(yx.subvec(k*nk,k*nk+nk-1)-xi.subvec(k*nk,k*nk+nk-1)+eta.subvec(k*nk,k*nk+nk-1));
       auto finish_map = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> elapsed_map = finish_map - start_map;
@@ -286,5 +286,3 @@ Rcpp::List paraQPADMslackcpp(arma::vec y, arma::mat x, int K, double tau, String
   return final; 
 
 }
-
-
